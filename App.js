@@ -1,329 +1,527 @@
-import React, { useEffect, useState } from "react";
-import { useRef } from "react";
-import { StatusBar } from "expo-status-bar";
-import { StyleSheet, View, Pressable, Text } from "react-native";
-import { VLCPlayer, VlCPlayerView } from "react-native-vlc-media-player";
-import * as ScreenOrientation from "expo-screen-orientation";
-const AUTO_HIDE_DELAY = 3000;
-const DOUBLE_TAP_DELAY = 300;
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
+} from "react-native";
+import Slider from "@react-native-community/slider";
+import Orientation from "react-native-orientation-locker";
+import { VLCPlayer } from "react-native-vlc-media-player";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const HIDE_CONTROLS_DELAY = 3000;
+
 export default function App() {
-  const hideControlsTimer = useRef(null);
-  async function changeScreenOrientation() {
-    await ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE_LEFT,
-    );
-  }
-  const [showControls, setShowControls] = useState(true);
+  const playerRef = useRef(null);
+  const hideTimerRef = useRef(null);
+
   const [paused, setPaused] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [error, setError] = useState("");
+  const [showControls, setShowControls] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   const [duration, setDuration] = useState(0);
-  const [seekValue, setSeekValue] = useState(undefined);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  const [sliderValue, setSliderValue] = useState(0);
+  const [isSliding, setIsSliding] = useState(false);
+
+  const videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
+
+  const playerHeight = useMemo(() => {
+    return isFullscreen ? SCREEN_HEIGHT : SCREEN_WIDTH * (9 / 16);
+  }, [isFullscreen]);
+
+  const clearHideTimer = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
+
+  const startHideTimer = useCallback(() => {
+    clearHideTimer();
+
+    if (!paused && showControls) {
+      hideTimerRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, HIDE_CONTROLS_DELAY);
+    }
+  }, [clearHideTimer, paused, showControls]);
 
   useEffect(() => {
-    if (showControls && !paused) {
-      startAutoHideTimer();
-    } else {
-      clearAutoHideTimer();
-    }
-  }, [showControls, paused]);
-  function ControlButton({ label, onPress, big = false }) {
-    return (
-      <Pressable
-        onPress={onPress}
-        style={[styles.controlBtn, big && styles.controlBtnBig]}
-      >
-        <Text style={[styles.controlText, big && styles.controlTextBig]}>
-          {label}
-        </Text>
-      </Pressable>
-    );
-  }
+    startHideTimer();
+    return clearHideTimer;
+  }, [showControls, paused, startHideTimer, clearHideTimer]);
 
-  const forward10 = () => {
-    seekToSeconds(currentTime + 10);
-    showControlsAndResetTimer();
-  };
+  useEffect(() => {
+    return () => {
+      clearHideTimer();
+      Orientation.lockToPortrait();
+    };
+  }, [clearHideTimer]);
 
-  const backward10 = () => {
-    seekToSeconds(currentTime - 10);
-    showControlsAndResetTimer();
-  };
+  const formatTime = (seconds) => {
+    if (!seconds || Number.isNaN(seconds)) return "00:00";
 
-  const togglePlayPause = () => {
-    setPaused((prev) => !prev);
-    setShowControls(true);
-  };
-
-  const seekToSeconds = (sec) => {
-    if (!duration || duration <= 0) return;
-
-    const clamped = Math.max(0, Math.min(sec, duration));
-    const fraction = clamped / duration;
-
-    setCurrentTime(clamped);
-    setSeekValue(fraction);
-
-    requestAnimationFrame(() => {
-      setSeekValue(undefined);
-    });
-  };
-
-  const showControlsAndResetTimer = () => {
-    setShowControls(true);
-    if (!paused) {
-      startAutoHideTimer();
-    }
-  };
-
-  const toggleControls = () => {
-    setShowControls((prev) => {
-      const next = !prev;
-      if (next && !paused) {
-        startAutoHideTimer();
-      } else {
-        clearAutoHideTimer();
-      }
-      return next;
-    });
-  };
-  const startAutoHideTimer = () => {
-    clearAutoHideTimer();
-
-    hideControlsTimer.current = setTimeout(() => {
-      setShowControls(false);
-    }, AUTO_HIDE_DELAY);
-  };
-
-  const clearAutoHideTimer = () => {
-    if (hideControlsTimer.current) {
-      clearTimeout(hideControlsTimer.current);
-      hideControlsTimer.current = null;
-    }
-  };
-
-  const formatTime = (sec) => {
-    if (!Number.isFinite(sec)) return "00:00";
-
-    const total = Math.floor(sec);
-    const hrs = Math.floor(total / 3600);
-    const mins = Math.floor((total % 3600) / 60);
+    const total = Math.floor(seconds);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
     const secs = total % 60;
 
-    if (hrs > 0) {
-      return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(
+    if (hours > 0) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
         2,
         "0",
       )}:${String(secs).padStart(2, "0")}`;
     }
 
-    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   };
+
+  const showControlsAndRestartTimer = useCallback(() => {
+    setShowControls(true);
+    clearHideTimer();
+    hideTimerRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, HIDE_CONTROLS_DELAY);
+  }, [clearHideTimer]);
+
+  const toggleControls = () => {
+    if (showControls) {
+      clearHideTimer();
+      setShowControls(false);
+    } else {
+      showControlsAndRestartTimer();
+    }
+  };
+
+  const togglePlayPause = () => {
+    setPaused((prev) => !prev);
+    showControlsAndRestartTimer();
+  };
+
+  const seekTo = (seconds) => {
+    if (!playerRef.current || !duration) return;
+
+    let safeSeconds = seconds;
+    if (safeSeconds < 0) safeSeconds = 0;
+    if (safeSeconds > duration) safeSeconds = duration;
+
+    const position = safeSeconds / duration;
+
+    try {
+      playerRef.current.seek(position);
+      setCurrentTime(safeSeconds);
+      setSliderValue(position);
+    } catch (err) {
+      console.log("Seek error:", err);
+    }
+  };
+
+  const seekBackward = () => {
+    seekTo(currentTime - 10);
+    showControlsAndRestartTimer();
+  };
+
+  const seekForward = () => {
+    seekTo(currentTime + 10);
+    showControlsAndRestartTimer();
+  };
+
+  const enterFullscreen = () => {
+    setIsFullscreen(true);
+    Orientation.lockToLandscape();
+    showControlsAndRestartTimer();
+  };
+
+  const exitFullscreen = () => {
+    setIsFullscreen(false);
+    Orientation.lockToPortrait();
+    showControlsAndRestartTimer();
+  };
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  };
+
+  const handleProgress = (progress) => {
+    const newCurrentTime = Number(progress?.currentTime ?? 0);
+    const newDuration = Number(progress?.duration ?? duration ?? 0);
+
+    let newPosition = 0;
+    if (typeof progress?.position === "number") {
+      newPosition = progress.position;
+    } else if (newDuration > 0) {
+      newPosition = newCurrentTime / newDuration;
+    }
+
+    if (newDuration > 0) {
+      setDuration(newDuration);
+    }
+
+    if (!isSliding) {
+      setCurrentTime(newCurrentTime);
+      setSliderValue(newPosition);
+    }
+
+    if (newCurrentTime > 0) {
+      setIsBuffering(false);
+      setError("");
+    }
+  };
+
+  const handleLoad = (data) => {
+    const loadedDuration = Number(data?.duration ?? 0);
+    if (loadedDuration > 0) {
+      setDuration(loadedDuration);
+    }
+    setIsBuffering(false);
+    setError("");
+  };
+
+  const handlePlaying = () => {
+    setIsBuffering(false);
+    setError("");
+  };
+
+  const handleBuffering = () => {
+    setIsBuffering(true);
+  };
+
+  const handlePaused = () => {
+    setIsBuffering(false);
+  };
+
+  const handleEnded = () => {
+    setPaused(true);
+    setCurrentTime(duration);
+    setSliderValue(1);
+    setShowControls(true);
+    clearHideTimer();
+  };
+
+  const handleError = (e) => {
+    console.log("VLC Error:", e);
+    setError("Video failed to play.");
+    setIsBuffering(false);
+    setShowControls(true);
+    clearHideTimer();
+  };
+
+  const previewTime = isSliding ? sliderValue * duration : currentTime;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.playerWrapper}>
-        <VLCPlayer
-          style={styles.video}
-          source={{
-            // uri: "https://movies.movie4mm.com/2026/Midwinter.Break.2026/Midwinter.Break.2026.1080p.mkv",
-            uri: "https://movies.movie4mm.com/2026/Midwinter.Break.2026/Midwinter.Break.2026.1080p.mkv",
-          }}
-          autoplay={true}
-          paused={paused}
-          seek={seekValue}
-          onLoad={(info) => {
-            if (info && typeof info.duration === "number") {
-              setDuration(info.duration);
-            }
-          }}
-          onProgress={(progress) => {
-            if (typeof progress?.currentTime === "number") {
-              setCurrentTime(progress.currentTime);
-            }
-            if (
-              typeof progress?.duration === "number" &&
-              progress.duration > 0
-            ) {
-              setDuration(progress.duration);
-            }
-          }}
-        />
+    <SafeAreaView style={styles.container}>
+      <StatusBar hidden={isFullscreen} barStyle="light-content" />
 
-        <Pressable style={styles.tapLayer} onPress={toggleControls} />
-
-        {/* <View style={styles.bottomProgress} pointerEvents="none">
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width:
-                    duration > 0
-                      ? `${Math.min((currentTime / duration) * 100, 100)}%`
-                      : "0%",
-                },
-              ]}
+      <View
+        style={[
+          styles.playerContainer,
+          isFullscreen && styles.fullscreenContainer,
+          { height: playerHeight },
+        ]}
+      >
+        <TouchableWithoutFeedback onPress={toggleControls}>
+          <View style={styles.touchArea}>
+            <VLCPlayer
+              ref={playerRef}
+              style={styles.player}
+              source={{
+                uri: videoUrl,
+                initType: 1,
+                hwDecoderEnabled: 1,
+                hwDecoderForced: 1,
+                initOptions: [
+                  "--network-caching=150",
+                  "--rtsp-tcp",
+                  "--no-stats",
+                ],
+              }}
+              autoplay={true}
+              paused={paused}
+              resizeMode="contain"
+              autoAspectRatio={true}
+              onLoad={handleLoad}
+              onProgress={handleProgress}
+              onPlaying={handlePlaying}
+              onBuffering={handleBuffering}
+              onPaused={handlePaused}
+              onEnded={handleEnded}
+              onError={handleError}
+              repeat={true}
             />
-          </View>
-        </View> */}
 
-        {showControls && (
-          <View style={styles.overlay} pointerEvents="box-none">
-            <View style={styles.topBar}>
-              <Text style={styles.title} numberOfLines={1}>
-                Hello
-              </Text>
-            </View>
-
-            <View style={styles.middleSection} pointerEvents="box-none">
-              <View style={styles.centerControls}>
-                <ControlButton label="⏪ 10" onPress={backward10} />
-                <ControlButton
-                  label={paused ? "▶" : "⏸"}
-                  onPress={togglePlayPause}
-                  big
-                />
-                <ControlButton label="10 ⏩" onPress={forward10} />
+            {isBuffering && (
+              <View style={styles.loadingLayer}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={styles.loadingText}>Loading video...</Text>
               </View>
-            </View>
+            )}
 
-            <View style={styles.bottomBar}>
-              <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-
-              {/* <View style={styles.progressTrack} /> */}
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width:
-                        duration > 0
-                          ? `${Math.min((currentTime / duration) * 100, 100)}%`
-                          : "0%",
-                    },
-                  ]}
-                />
+            {!!error && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
               </View>
+            )}
 
-              <Text style={styles.timeText}>{formatTime(duration)}</Text>
+            {showControls && (
+              <View style={styles.overlay}>
+                <View style={styles.topBar}>
+                  <Text style={styles.videoTitle}>My VLC Video</Text>
+                  <TouchableOpacity
+                    onPress={toggleFullscreen}
+                    style={styles.topButton}
+                  >
+                    <Text style={styles.topButtonText}>
+                      {isFullscreen ? "Exit" : "Full"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-              {/* <ControlButton
-              label={isFullscreen ? "⤢" : "⛶"}
-              onPress={isFullscreen ? exitFullscreen : enterFullscreen}
-            /> */}
-            </View>
+                <View style={styles.middleControls}>
+                  <TouchableOpacity
+                    style={styles.sideControl}
+                    onPress={seekBackward}
+                  >
+                    <Text style={styles.sideControlText}>⏪</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.playButton}
+                    onPress={togglePlayPause}
+                  >
+                    <Text style={styles.playButtonText}>
+                      {paused ? "▶" : "⏸"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.sideControl}
+                    onPress={seekForward}
+                  >
+                    <Text style={styles.sideControlText}>⏩</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.bottomBar}>
+                  <Text style={styles.timeText}>{formatTime(previewTime)}</Text>
+
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={0}
+                    maximumValue={1}
+                    value={sliderValue}
+                    minimumTrackTintColor="#e50914"
+                    maximumTrackTintColor="rgba(255,255,255,0.35)"
+                    thumbTintColor="#e50914"
+                    onSlidingStart={() => {
+                      setIsSliding(true);
+                      clearHideTimer();
+                      setShowControls(true);
+                    }}
+                    onValueChange={(value) => {
+                      setSliderValue(value);
+                    }}
+                    onSlidingComplete={(value) => {
+                      setIsSliding(false);
+                      setSliderValue(value);
+                      seekTo(value * duration);
+                      showControlsAndRestartTimer();
+                    }}
+                  />
+
+                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
+
+                  <TouchableOpacity
+                    onPress={toggleFullscreen}
+                    style={styles.fullscreenButton}
+                  >
+                    <Text style={styles.fullscreenText}>
+                      {isFullscreen ? "🡼" : "⛶"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
-        )}
+        </TouchableWithoutFeedback>
       </View>
-    </View>
+
+      {!isFullscreen && (
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>Netflix Style VLC Player</Text>
+          <Text style={styles.infoSubtitle}>
+            Auto hide controls + rotate + fullscreen
+          </Text>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#111",
   },
-  playerWrapper: {
+  playerContainer: {
     width: "100%",
-    height: 300,
     backgroundColor: "#000",
-    position: "relative",
+    overflow: "hidden",
   },
-  video: {
+  fullscreenContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  touchArea: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  player: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  loadingLayer: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  tapLayer: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
+  loadingText: {
+    color: "#fff",
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: "500",
   },
-
+  errorBox: {
+    position: "absolute",
+    top: 20,
+    alignSelf: "center",
+    backgroundColor: "rgba(229,9,20,0.95)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  errorText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
-    elevation: 2,
     justifyContent: "space-between",
-    backgroundColor: "rgba(0,0,0,0.28)",
-    paddingHorizontal: 14,
-    paddingVertical: 16,
+    backgroundColor: "rgba(0,0,0,0.30)",
+    paddingTop: 12,
+    paddingBottom: Platform.OS === "ios" ? 12 : 8,
   },
-  bottomProgress: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 2,
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-  },
-
   topBar: {
-    minHeight: 40,
-    justifyContent: "center",
-  },
-
-  title: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  middleSection: {
-    flex: 1,
-    justifyContent: "center",
-  },
-
-  centerControls: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  controlBtn: {
-    minWidth: 44,
-    minHeight: 44,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginHorizontal: 8,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
   },
-
-  controlBtnBig: {
-    minWidth: 64,
-    minHeight: 64,
-  },
-
-  controlText: {
+  videoTitle: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
   },
-
-  controlTextBig: {
-    fontSize: 24,
+  topButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 16,
   },
-
+  topButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  middleControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 24,
+  },
+  sideControl: {
+    backgroundColor: "rgba(255,255,255,0.14)",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    minWidth: 76,
+    alignItems: "center",
+  },
+  sideControlText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  playButton: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: "rgba(255,255,255,0.20)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  playButtonText: {
+    color: "#fff",
+    fontSize: 30,
+    fontWeight: "700",
+  },
   bottomBar: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 8,
+  },
+  slider: {
+    flex: 1,
+    marginHorizontal: 6,
   },
   timeText: {
     color: "#fff",
     fontSize: 12,
-    width: 56,
-    textAlign: "center",
+    minWidth: 50,
   },
-  progressTrack: {
-    flex: 1,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    overflow: "hidden",
-    marginHorizontal: 8,
+  fullscreenButton: {
+    marginLeft: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#e50914",
+  fullscreenText: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  infoSection: {
+    padding: 16,
+  },
+  infoTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  infoSubtitle: {
+    color: "#b3b3b3",
+    fontSize: 14,
   },
 });
