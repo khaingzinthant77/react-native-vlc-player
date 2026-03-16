@@ -31,21 +31,29 @@ export default function App() {
   const [isBuffering, setIsBuffering] = useState(true);
   const [error, setError] = useState("");
   const [showControls, setShowControls] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(true);
 
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
 
   const [sliderValue, setSliderValue] = useState(0);
   const [isSliding, setIsSliding] = useState(false);
+  const [bottomBarWidth, setBottomBarWidth] = useState(0);
+  const [rightControlsWidth, setRightControlsWidth] = useState(0);
 
-  const videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
+  const videoUrl =
+    "https://movies.movie4mm.com/2026/Midwinter.Break.2026/Midwinter.Break.2026.1080p.mkv";
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const playerHeight = useMemo(() => {
     return isFullscreen ? windowHeight : windowWidth * (9 / 16);
   }, [isFullscreen, windowHeight, windowWidth]);
+
+  const sliderWidth = useMemo(() => {
+    const size = isFullscreen ? 170 : 80;
+    return Math.max(0, bottomBarWidth - rightControlsWidth - size);
+  }, [bottomBarWidth, rightControlsWidth]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -150,18 +158,28 @@ export default function App() {
   //   showControlsAndRestartTimer();
   // };
   async function enterFullscreen() {
-    setIsFullscreen(true);
-    await ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT,
-    );
+    try {
+      setIsFullscreen(true);
+      await ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT,
+      );
+    } catch (error) {
+      console.log("Enter fullscreen error:", error);
+    }
   }
 
   const exitFullscreen = async () => {
     setIsFullscreen(false);
-    // Orientation.lockToPortrait();
-    await ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.DEFAULT,
-    );
+
+    try {
+      await ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP,
+      );
+    } catch (e) {
+      console.log("PORTRAIT_UP not supported, unlocking instead", e);
+      await ScreenOrientation.unlockAsync();
+    }
+
     showControlsAndRestartTimer();
   };
 
@@ -334,11 +352,16 @@ export default function App() {
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.bottomBar}>
+                <View
+                  style={styles.bottomBar}
+                  onLayout={(e) =>
+                    setBottomBarWidth(e.nativeEvent.layout.width)
+                  }
+                >
                   <Text style={styles.timeText}>{formatTime(previewTime)}</Text>
 
                   <Slider
-                    style={styles.slider}
+                    style={[styles.slider, { width: sliderWidth, flex: 0 }]}
                     minimumValue={0}
                     maximumValue={1}
                     value={sliderValue}
@@ -361,25 +384,23 @@ export default function App() {
                     }}
                   />
 
-                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
-
-                  <TouchableOpacity
-                    onPress={toggleFullscreen}
-                    style={styles.fullscreenButton}
+                  <View
+                    style={styles.rightControls}
+                    onLayout={(e) =>
+                      setRightControlsWidth(e.nativeEvent.layout.width)
+                    }
                   >
-                    <Text style={styles.fullscreenText}>
-                      {isFullscreen ? "🡼" : "⛶"}
-                    </Text>
-                  </TouchableOpacity>
+                    <Text style={styles.timeText}>{formatTime(duration)}</Text>
 
-                  <TouchableOpacity
-                    onPress={toggleFullscreen}
-                    style={styles.fullscreenButton}
-                  >
-                    <Text style={styles.fullscreenText}>
-                      {isFullscreen ? "🡼" : "⛶"}
-                    </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={toggleFullscreen}
+                      style={styles.fullscreenButton}
+                    >
+                      <Text style={styles.fullscreenText}>
+                        {isFullscreen ? "⤢" : "⛶"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
@@ -510,8 +531,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   slider: {
-    flex: 1,
     marginHorizontal: 6,
+  },
+  rightControls: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   timeText: {
     color: "#fff",
