@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   Platform,
   SafeAreaView,
   StatusBar,
@@ -16,12 +15,12 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import Orientation from "react-native-orientation-locker";
 import { VLCPlayer } from "react-native-vlc-media-player";
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+import * as ScreenOrientation from "expo-screen-orientation";
 const HIDE_CONTROLS_DELAY = 3000;
 
 export default function App() {
@@ -42,9 +41,11 @@ export default function App() {
 
   const videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
 
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
   const playerHeight = useMemo(() => {
-    return isFullscreen ? SCREEN_HEIGHT : SCREEN_WIDTH * (9 / 16);
-  }, [isFullscreen]);
+    return isFullscreen ? windowHeight : windowWidth * (9 / 16);
+  }, [isFullscreen, windowHeight, windowWidth]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -143,15 +144,24 @@ export default function App() {
     showControlsAndRestartTimer();
   };
 
-  const enterFullscreen = () => {
+  // const enterFullscreen = () => {
+  //   setIsFullscreen(true);
+  //   Orientation.lockToLandscape();
+  //   showControlsAndRestartTimer();
+  // };
+  async function enterFullscreen() {
     setIsFullscreen(true);
-    Orientation.lockToLandscape();
-    showControlsAndRestartTimer();
-  };
+    await ScreenOrientation.lockAsync(
+      ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT,
+    );
+  }
 
-  const exitFullscreen = () => {
+  const exitFullscreen = async () => {
     setIsFullscreen(false);
-    Orientation.lockToPortrait();
+    // Orientation.lockToPortrait();
+    await ScreenOrientation.lockAsync(
+      ScreenOrientation.OrientationLock.DEFAULT,
+    );
     showControlsAndRestartTimer();
   };
 
@@ -236,8 +246,10 @@ export default function App() {
       <View
         style={[
           styles.playerContainer,
-          isFullscreen && styles.fullscreenContainer,
-          { height: playerHeight },
+          {
+            width: isFullscreen ? windowWidth : "100%",
+            height: playerHeight,
+          },
         ]}
       >
         <TouchableWithoutFeedback onPress={toggleControls}>
@@ -359,6 +371,15 @@ export default function App() {
                       {isFullscreen ? "🡼" : "⛶"}
                     </Text>
                   </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={toggleFullscreen}
+                    style={styles.fullscreenButton}
+                  >
+                    <Text style={styles.fullscreenText}>
+                      {isFullscreen ? "🡼" : "⛶"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}
@@ -387,10 +408,6 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: "#000",
     overflow: "hidden",
-  },
-  fullscreenContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
   },
   touchArea: {
     flex: 1,
